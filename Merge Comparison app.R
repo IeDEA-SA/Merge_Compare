@@ -1,12 +1,3 @@
-#
-# This is a Shiny web application. You can run the application by clicking
-# the 'Run App' button above.
-#
-# Find out more about building applications with Shiny here:
-#
-#    http://shiny.rstudio.com/
-#
-
 library(shiny)
 library(shinythemes)
 library(DT)
@@ -19,11 +10,10 @@ library(profvis)
 library(bslib)
 library(treemapify)
 library(viridis)
-con <- odbcConnect("IeDEA_MR_1")
+con <- odbcConnect("IeDEA_MR_1")   # change to your OBDC link name
 databases <- sqlQuery(con,"SELECT name
                       FROM master.sys.databases
                       where name not in ('master','tempdb','model','msdb','CIDER_TIER','CIDER_CONCEPTS')
-                      and name not like 'CIDER_IeDEA_%'
                       and name like 'CIDER_%' ")
 custom_theme <- bs_theme(
   version = 5,
@@ -51,7 +41,7 @@ ui <- fluidPage(
 
                                     titlePanel(title=div(
                                                          img(src="logo2.png"
-                                                         ,span(" Compare ", span("IeDEA", style = "color: darkred"), span("cohort extractions") , style ="font-weight: bold; font-size: 50px;float:right")
+                                                         ,span(" Merge Compare ", span("IeDEA", style = "color: darkred"), span("cohort extractions") , style ="font-weight: bold; font-size: 50px;float:right")
                                                          , height =100, width = 400
                                                          , style = " float:center"))
 
@@ -62,8 +52,8 @@ ui <- fluidPage(
                     sidebarPanel(
                       p("This application is used for internal data validation within the data management team to understand data integrity between data extractions for the same cohort within ",a("IeDEA South Africa. "),
                           href = "https://www.iedea-sa.org/"),
-                        selectInput("extract_1", "Previous Data Extraction", choices = databases, selected = "KHAYELITSHA_7"),
-                        selectInput("extract_2", "Current Data Extraction", choices  = databases, selected = "KHAYELITSHA_8"),
+                        selectInput("extract_1", "Previous Data Extraction", choices = databases, selected = "CIDER_KHAYELITSHA_7"),
+                        selectInput("extract_2", "Current Data Extraction", choices  = databases, selected = "CIDER_KHAYELITSHA_8"),
                       shinycssloaders::withSpinner(plotlyOutput("age_profile"), type = 5),
                       shinycssloaders::withSpinner(plotlyOutput("enr_plot"), type = 5)
                     ),
@@ -90,7 +80,7 @@ ui <- fluidPage(
                             tabPanel("Lab measures",shinycssloaders::withSpinner(plotlyOutput("lab"), type = 5)),
                             tabPanel("ART Regimen",fluidRow(column(6,shinycssloaders::withSpinner(plotlyOutput('art_gauge_2'), type = 5))
                                                             ,column(6,shinycssloaders::withSpinner(plotlyOutput('art_gauge_1'), type = 5)))
-                                                  ,fluidRow(column(12,shinycssloaders::withSpinner(plotOutput("art_plot"), type = 5)))),
+                                                  ,fluidRow(column(12,shinycssloaders::withSpinner(plotOutput("art_plot", width = "1600px", height = "900px"), type = 5)))),
                             tabPanel("Visits",fluidRow(column(12,shinycssloaders::withSpinner(plotlyOutput("vis_plot"), type = 5)))
                                              ,fluidRow(column(6,shinycssloaders::withSpinner(plotlyOutput('weigh_plot'), type = 5)),
                                                column(6,shinycssloaders::withSpinner(plotlyOutput('heigh_plot'), type = 5)))),
@@ -494,23 +484,105 @@ select *,
     
     
     data_t1 <- reactive({
-      sqlQuery(con,paste0("select v1.[Table], v1.Measure, v1.[Current], v2.[Current] Previous from ",
-                          input$extract_2,
-                          "..vw_Summary v1 left join ",
-                          input$extract_1,
-                          "..vw_Summary v2 on v1.[Table]=v2.[Table] and v1.Measure=v2.Measure
-order by case when v1.[Table] ='tblBAS' then 1
+    
+      
+      
+      sqlQuery(con,paste0("select v1.[Table], v1.Measure, v1.[Current], v2.[Current] Previous 
+from (select 'tblBAS' 'Table', 'Total number of patients' Measure, count(*) 'Current'  
+from ",input$extract_2,"..tblBAS 
+union
+select 'tblBAS' 'Table', 'Patients enrolled on ART' Measure, count(distinct b.patient) 'Current'  
+from ",input$extract_2,"..tblBAS b
+join ",input$extract_2,"..tblART a on a.patient=b.patient
+union
+select 'tblLTFU','Deaths', count(*)
+from ",input$extract_2,"..tblLTFU
+where death_y=1
+union
+select 'tblVIS', 'Visits', count(*)
+from ",input$extract_2,"..tblVIS
+union
+select 'tblLAB_CD4', 'Records', count(*)
+from ",input$extract_2,"..tblLAB_CD4
+union
+select 'tblLAB_RNA', 'Records', count(*)
+from ",input$extract_2,"..tblLAB_RNA
+union
+select 'tblLAB', lab_id, count(*)
+from ",input$extract_2,"..tblLAB
+group by lab_id
+union
+select 'tblART' 'Table', 'Patients on ART' Measure, count(*) 'Current' 
+from ",input$extract_2,"..tblART
+union
+select 'tblLTFU', 'Crude Mortality Rate per 100 000',  round(deaths*100000.0/total, 2) CMR
+from (select count(*) deaths
+      from ",input$extract_2,"..tblLTFU l
+      where death_y =1) x
+cross join (select count(*) total from ",input$extract_2,"..tblBAS
+) v
+                    ) v1
+left join      (select 'tblBAS' 'Table', 'Total number of patients' Measure, count(*) 'Current'  
+from ",input$extract_1,"..tblBAS 
+union
+select 'tblBAS' 'Table', 'Patients enrolled on ART' Measure, count(distinct b.patient) 'Current'  
+from ",input$extract_1,"..tblBAS b
+join ",input$extract_1,"..tblART a on a.patient=b.patient
+union
+select 'tblLTFU','Deaths', count(*)
+from ",input$extract_1,"..tblLTFU
+where death_y=1
+union
+select 'tblVIS', 'Visits', count(*)
+from ",input$extract_1,"..tblVIS
+union
+select 'tblLAB_CD4', 'Records', count(*)
+from ",input$extract_1,"..tblLAB_CD4
+union
+select 'tblLAB_RNA', 'Records', count(*)
+from ",input$extract_1,"..tblLAB_RNA
+union
+select 'tblLAB', lab_id, count(*)
+from ",input$extract_1,"..tblLAB
+group by lab_id
+union
+select 'tblART' 'Table', 'Patients on ART' Measure, count(*) 'Current' 
+from ",input$extract_1,"..tblART
+union
+select 'tblLTFU', 'Crude Mortality Rate per 100 000',  round(deaths*100000.0/total, 2) CMR
+from (select count(*) deaths
+      from ",input$extract_1,"..tblLTFU l
+      where death_y =1) x
+cross join (select count(*) total from ",input$extract_1,"..tblBAS
+) s
+                    ) v2 on v1.[Table]=v2.[Table] and v1.Measure=v2.Measure           
+                    order by case when v1.[Table] ='tblBAS' then 1
               when v1.[Table] ='tblLTFU' then 2
 			  when v1.[Table] ='tblART' then 3
 			  when v1.[Table] ='tblLAB_CD4' then 4
 			  when v1.[Table] ='tblLAB_RNA' then 5
 			  when v1.[Table] ='tblVIS' then 6
-			  when v1.[Table] ='tblLAB' then 7 end"))
+			  when v1.[Table] ='tblLAB' then 7 end"))    
+      
+      
+#       sqlQuery(con,paste0("select v1.[Table], v1.Measure, v1.[Current], v2.[Current] Previous from ",
+#                           input$extract_2,
+#                           "..vw_Summary v1 left join ",
+#                           input$extract_1,
+#                           "..vw_Summary v2 on v1.[Table]=v2.[Table] and v1.Measure=v2.Measure
+# order by case when v1.[Table] ='tblBAS' then 1
+#               when v1.[Table] ='tblLTFU' then 2
+# 			  when v1.[Table] ='tblART' then 3
+# 			  when v1.[Table] ='tblLAB_CD4' then 4
+# 			  when v1.[Table] ='tblLAB_RNA' then 5
+# 			  when v1.[Table] ='tblVIS' then 6
+# 			  when v1.[Table] ='tblLAB' then 7 end"))
     })
    
      output$age_profile <- renderPlotly({
         ggplotly(
          ggplot( data_age_pro() %>%
+                   filter(sex %in% c(1,2)) %>%
                    mutate(Tot = case_when( sex==1 ~  -1*Total,
                                                sex==2 ~ 1*Total),
                           sex = factor(as.factor(sex), levels = c(1,2), labels= c("Male","Female")),
@@ -558,7 +630,7 @@ order by case when v1.[Table] ='tblBAS' then 1
                 scale_color_viridis(discrete = TRUE, option = "D")+
                 labs(color ="Extract", y = "Number of Patients", x = "Year of enrolment")+
                 theme_classic() +
-                theme(axis.text.x = element_text(angle = 90))
+                theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 15), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 15))
             )
         })
     
@@ -573,6 +645,7 @@ order by case when v1.[Table] ='tblBAS' then 1
         geom_treemap_text(colour = "white",
                           place = "centre",
                           size = 15) +
+        #geom_treemap_interactive() + # Interactive treemap
         labs(title = "Exposure to ART in Person Years") +
         facet_grid(~source) +
         scale_fill_viridis(discrete = TRUE) +
@@ -585,7 +658,7 @@ order by case when v1.[Table] ='tblBAS' then 1
             mode = "gauge+number+delta",
             value = sqlQuery(con,paste0("select count(distinct patient)
 from ",input$extract_1,"..tblART"))[1,1],
-            title = list(text = "Previous number of patients on ART", font = list(size = 15)),
+           # title = list(text = "Previous number of patients on ART", font = list(size = 15)),
             delta = list(reference = sqlQuery(con,paste0("select count(distinct patient)
 from ",input$extract_1,"..tblBAS"))[1,1]*0.8, increasing = list(color = "RebeccaPurple")),
             gauge = list(
@@ -612,7 +685,13 @@ from ",input$extract_1,"..tblBAS"))[1,1])))  %>%
             layout(
                 margin = list(l=20,r=30),
                 paper_bgcolor = "white",
-                font = list(color = "darkblue", family = "Arial"))
+                font = list(color = "darkblue", family = "Arial"))%>% layout(
+                  title = list(
+                    text = "Previous number of patients on ART",
+                    font = list(size = 20)  # Customize the font size
+                  ),
+                  margin = list(t = 50)  # Adjust the top margin to create space for the title
+                )
 
     })
 
@@ -622,7 +701,7 @@ from ",input$extract_1,"..tblBAS"))[1,1])))  %>%
             mode = "gauge+number+delta",
             value = sqlQuery(con,paste0("select count(distinct patient)
 from ",input$extract_2,"..tblART"))[1,1],
-            title = list(text = "Current number of patients on ART", font = list(size = 15)),
+           # title = list(text = "Current number of patients on ART"),
             delta = list(reference = sqlQuery(con,paste0("select count(distinct patient)
 from ",input$extract_2,"..tblBAS"))[1,1]*0.8, increasing = list(color = "RebeccaPurple")),
             gauge = list(
@@ -649,7 +728,13 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
             layout(
                 margin = list(l=20,r=30),
                 paper_bgcolor = "white",
-                font = list(color = "darkblue", family = "Arial"))
+                font = list(color = "darkblue", family = "Arial")) %>% layout(
+                  title = list(
+                    text = "Current number of patients on ART",
+                    font = list(size = 20)  # Customize the font size
+                  ),
+                  margin = list(t = 50)  # Adjust the top margin to create space for the title
+                )
 
     })
 
@@ -661,11 +746,11 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
           geom_bar(stat= "identity", position="dodge")+
           #facet_grid(~source) +
           scale_x_continuous(limits=c(2000,2025), n.breaks = 23)+
-          labs(x="",y = "Total Viral loads")+
+          labs(x="",y = "Total Viral loads", fill="Extract")+
           #scale_fill_discrete(labels= c("Undetectable","Detectable"))+
           scale_fill_viridis(discrete = TRUE) +
           theme_classic()  +
-          theme(axis.text.x = element_text(angle = 90))
+          theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 15), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 15))
       )
     })
 
@@ -681,7 +766,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
             #scale_fill_discrete(labels= c("Undetectable","Detectable"))+
             scale_fill_viridis(discrete = TRUE) +
             theme_classic()  +
-            theme(axis.text.x = element_text(angle = 90))
+            theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 15), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 15))
         )
     })
 
@@ -691,10 +776,10 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
           geom_bar(stat= "identity", position = "dodge")+
           #facet_grid(~source) +
           scale_x_continuous(limits=c(2000,2025), n.breaks = 23)+
-          labs( x="", y = "Number of CD4 measurements")+
+          labs( x="", y = "Number of CD4 measurements", fill= "Extract")+
           scale_fill_viridis(discrete = TRUE) +
           theme_classic()  +
-          theme(axis.text.x = element_text(angle = 90))
+          theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 15), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 15))
       )
     })
 
@@ -704,10 +789,10 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
           geom_bar(stat= "identity", position ="dodge")+
          # facet_grid(~source) +
           scale_x_continuous(limits=c(2000,2025), n.breaks = 23)+
-          labs( x="", y = "Number of unique ART episodes")+
+          labs( x="", y = "Number of unique ART episodes", fill= "Extract")+
           scale_fill_viridis(discrete = TRUE) +
           theme_classic()  +
-          theme(axis.text.x = element_text(angle = 90))
+          theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 15), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 15))
       )
     })
 
@@ -718,11 +803,11 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
             geom_area(stat= "identity")+
             facet_grid(~source) +
             scale_x_continuous(limits=c(2000,2025), n.breaks = 23)+
-            labs(fill = "CD4 Count",x="", y = "Number of patients")+
+            labs(fill = "CD4 Count",x="", y = "Number of patients", fill="Extract")+
            scale_fill_viridis(discrete = TRUE) +
            # scale_fill_discrete(labels= c("Under 200 cells/mm3","200-500 cells/mm3","500-1,600 cells/mm3","Over 1,600 cells/mm3"))+
             theme_classic()  +
-            theme(axis.text.x = element_text(angle = 90))
+            theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 20), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 20))
         )
     })
 
@@ -734,7 +819,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
         scale_x_continuous(limits=c(2000,2025), n.breaks = 23) +
         scale_color_viridis(discrete = TRUE, option = "D")+
         theme_classic() +
-        theme(axis.text.x = element_text(angle = 90))
+        theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 20), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 20))
       )
     })
 
@@ -746,7 +831,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
           scale_x_continuous(limits=c(2000,2025), n.breaks = 23) +
           scale_color_viridis(discrete = TRUE, option = "D")+
           theme_classic() +
-          theme(axis.text.x = element_text(angle = 90))
+          theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 20), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 20))
       )
     })
 
@@ -758,7 +843,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
           scale_x_continuous(limits=c(2000,2025), n.breaks = 23) +
           scale_color_viridis(discrete = TRUE, option = "D")+
           theme_classic() +
-          theme(axis.text.x = element_text(angle = 90))
+          theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 14), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 20))
       )
     })
 
@@ -773,7 +858,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
         facet_grid(~source)+
         scale_fill_viridis(discrete = TRUE) +
         theme_classic() +
-        theme(legend.position="none")
+        theme(axis.text.x = element_text(angle = 90),axis.title = element_text(size = 20), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 20),legend.position="none")
       )
     })
 
@@ -786,7 +871,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
            facet_grid(~source)+
            scale_fill_viridis(discrete = TRUE)+
            theme_classic() +
-           theme(legend.position="none")
+           theme(legend.position="none",axis.text.x = element_text(angle = 90),axis.title = element_text(size = 20), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 15))
        )
      })
 
@@ -799,7 +884,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
            scale_fill_viridis(discrete = TRUE)+
            facet_grid(~source)+
            theme_classic() +
-           theme(legend.position="none")
+           theme(legend.position="none",axis.text.x = element_text(angle = 90),axis.title = element_text(size = 20), legend.text = element_text(size = 15), legend.title =element_text(size = 15),strip.text.x = element_text(size = 20))
        )
 
      })
@@ -812,7 +897,7 @@ from ",input$extract_2,"..tblBAS"))[1,1])))  %>%
        ggplotly(
          ggplot(data_npr(), aes(x=year, y =deaths, color = source)) +
            geom_line() +
-           labs(x="Year of death", y = "cases", title = "Deaths from different sources") +
+           labs(x="Year", y = "Deaths", color = "Source of deaths") +
            facet_grid(~extract) +
            scale_color_viridis(discrete = TRUE, option = "D")+
            theme_classic()
